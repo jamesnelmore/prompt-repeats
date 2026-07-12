@@ -10,12 +10,15 @@ Re-running resumes unfinished tasks from log_dir instead of redoing them.
 
 from inspect_ai import eval_set
 
-from task import cot_comparision
+from task import prompt_repeat_comparison
 
 # The two arms. Inspect crosses these with every model below.
 TASKS = [
-    cot_comparision(use_cot=True),
-    cot_comparision(use_cot=False),
+    prompt_repeat_comparison(use_cot=True),
+    prompt_repeat_comparison(use_cot=False, prompt_repeats=1),
+    prompt_repeat_comparison(use_cot=False, prompt_repeats=2),
+    prompt_repeat_comparison(use_cot=False, prompt_repeats=4),
+    prompt_repeat_comparison(use_cot=False, prompt_repeats=8),
 ]
 
 # Three sizes of Gemma 3. Gemma is not a reasoning model, so the no-CoT arm
@@ -32,9 +35,8 @@ def main() -> None:
     success, logs = eval_set(
         tasks=TASKS,
         model=MODELS,
-        log_dir="logs/gemma-cot2",  # required; enables retry & resume
-        max_tasks=6,  # 2 tasks x 3 models = 6 effective tasks
-        limit=50,
+        log_dir="logs/gemma-repeats",
+        limit=500,
     )
     print(f"eval_set complete (success={success}); {len(logs)} logs written.")
 

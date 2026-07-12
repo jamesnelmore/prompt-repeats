@@ -30,7 +30,7 @@ ANSWER:
 
 
 @task
-def prompt_repeat_comparision(
+def prompt_repeat_comparison(
     use_cot: bool = False,
     prompt_repeats: int = 1,
 ) -> Task:
@@ -39,9 +39,17 @@ def prompt_repeat_comparision(
     # Add fewshot if necessary
     # Write custom solver to verify lack of CoT
 
-    prompt = COT_PROMPT_TEMPLATE if use_cot else NO_COT_PROMPT_TEMPLATE
+    assert prompt_repeats >= 1
 
-    solver = [prompt_template(prompt), generate()]
+    template = COT_PROMPT_TEMPLATE if use_cot else NO_COT_PROMPT_TEMPLATE
+
+    if prompt_repeats > 1:
+        # Repeat only the question ({prompt} placeholder), leaving the
+        # surrounding instructions in place exactly once.
+        repeated_question = "\n\n".join(["{prompt}"] * prompt_repeats)
+        template = template.replace("{prompt}", repeated_question)
+
+    solver = [prompt_template(template), generate()]
 
     dataset = hf_dataset(
         path="openai/gsm8k",
@@ -56,7 +64,8 @@ def prompt_repeat_comparision(
         scorer=match(numeric=True),
         # Distinct name per arm so the "task" column shows the CoT setting
         # directly (instead of "cot_comparision" for both arms).
-        name=f"gsm8k_{'cot' if use_cot else 'nocot'}",
+        name=f"gsm8k_{'cot' if use_cot else 'nocot'}"
+        + (f"_repeat{prompt_repeats}" if prompt_repeats > 1 else ""),
         display_name=f"GSM8K ({'CoT' if use_cot else 'no CoT'})",
         config=GenerateConfig(
             reasoning_effort=None if use_cot else "none",
