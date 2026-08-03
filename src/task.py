@@ -31,23 +31,23 @@ ANSWER:
 
 @task
 def prompt_repeat_comparison(
-    use_cot: bool = False,
-    prompt_repeats: int = 1,
+    use_cot: bool = False, prompt_repeats: int = 1, no_cot_max_tokens: int = 10
 ) -> Task:
-    """Inspect Task Definition for no chain-of-thought recovery benchmark."""
-    # TODO write out argument and return definitions
-    # Add fewshot if necessary
-    # Write custom solver to verify lack of CoT
+    """Inspect Task Definition for no chain-of-thought recovery benchmark.
 
-    assert prompt_repeats >= 1
+    Args:
+        use_cot: Run the with-CoT ceiling arm instead of the no-CoT arm.
+        prompt_repeats: How many times to repeat the question in the prompt.
+        no_cot_max_tokens: Output cap for the no-CoT arm.
+    """
+
+    assert prompt_repeats >= 1, "Prompt repeat count must be at least 1"
 
     template = COT_PROMPT_TEMPLATE if use_cot else NO_COT_PROMPT_TEMPLATE
 
     if prompt_repeats > 1:
-        # Repeat only the question ({prompt} placeholder), leaving the
-        # surrounding instructions in place exactly once.
-        repeated_question = "\n\n".join(["{prompt}"] * prompt_repeats)
-        template = template.replace("{prompt}", repeated_question)
+        repeated_placeholder = "\n\n".join(["{prompt}"] * prompt_repeats)
+        template = template.replace("{prompt}", repeated_placeholder)
 
     solver = [prompt_template(template), generate()]
 
@@ -58,16 +58,22 @@ def prompt_repeat_comparison(
         sample_fields=record_to_sample,
         revision=GSM8K_DATASET_REVISION,
     )
+    scorers = [match(numeric=True)]
+
+    name = f"gsm8k_{'cot' if use_cot else 'nocot'}" + (
+        f"_repeat{prompt_repeats}" if prompt_repeats > 1 else ""
+    )
+
     return Task(
         dataset=dataset,
         solver=solver,
-        scorer=match(numeric=True),
+        scorer=scorers,
         # Distinct name per arm so the "task" column shows the CoT setting
         # directly (instead of "cot_comparision" for both arms).
-        name=f"gsm8k_{'cot' if use_cot else 'nocot'}"
-        + (f"_repeat{prompt_repeats}" if prompt_repeats > 1 else ""),
+        name=name,
         display_name=f"GSM8K ({'CoT' if use_cot else 'no CoT'})",
         config=GenerateConfig(
             reasoning_effort=None if use_cot else "none",
+            max_tokens=None if use_cot else no_cot_max_tokens,
         ),
     )
