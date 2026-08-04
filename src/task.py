@@ -46,6 +46,18 @@ ANSWER_SCHEMA = ResponseSchema(
 )
 
 
+def repeated_template(template: str, prompt_repeats: int) -> str:
+    """Repeat the `{prompt}` placeholder in a template `prompt_repeats` times.
+
+    Shared with the mech-interp scripts so they build byte-identical prompts to
+    the ones that were actually evaluated.
+    """
+    assert prompt_repeats >= 1, "Prompt repeat count must be at least 1"
+    if prompt_repeats == 1:
+        return template
+    return template.replace("{prompt}", "\n\n".join(["{prompt}"] * prompt_repeats))
+
+
 @task
 def prompt_repeat_comparison(
     use_cot: bool = False,
@@ -67,13 +79,9 @@ def prompt_repeat_comparison(
             otherwise look like completed work and be skipped.
     """
 
-    assert prompt_repeats >= 1, "Prompt repeat count must be at least 1"
-
-    template = COT_PROMPT_TEMPLATE if use_cot else NO_COT_PROMPT_TEMPLATE
-
-    if prompt_repeats > 1:
-        repeated_placeholder = "\n\n".join(["{prompt}"] * prompt_repeats)
-        template = template.replace("{prompt}", repeated_placeholder)
+    template = repeated_template(
+        COT_PROMPT_TEMPLATE if use_cot else NO_COT_PROMPT_TEMPLATE, prompt_repeats
+    )
 
     # The no-CoT arm is constrained by ANSWER_SCHEMA instead, which forces the
     # first token to "{" and so needs no prefill.
