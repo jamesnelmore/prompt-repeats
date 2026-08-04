@@ -39,10 +39,18 @@ def arms(limit: int | None) -> list:
 MODELS: list[tuple[str, str, str | None]] = [
     ("google/gemma-4-26b-a4b-it", "NextBit", "bf16"),
     ("google/gemma-4-31b-it", "CoreWeave", "bf16"),
-    # (August 2026) DeepInfra is currently the only provider serving this one, and the no-CoT arm needs a
-    # route that honours response_format.
+    # (August 2026) DeepInfra is currently the only provider serving gemma-3-4b,
+    # and the no-CoT arm needs a route that honours response_format.
     ("google/gemma-3-4b-it", "DeepInfra", "bf16"),
+    ("google/gemma-3-12b-it", "DeepInfra", "bf16"),
+    # Only one in fp8.
+    # The bf16 endpoint does not support structured outputs (August 2026).
+    # A more careful investigation should standarize quantization and likely cannot use OpenRouter.
+    ("google/gemma-3-27b-it", "DeepInfra", "fp8"),
 ]
+
+# Pinning Openrouter providers dramatically increases rate limiting
+MAX_CONCURRENT_TASKS = 3
 
 
 def pinned_models(only: str | None = None) -> list[Model]:
@@ -102,7 +110,8 @@ def main() -> None:
         tasks=arms(args.limit),
         model=pinned_models(args.models),
         log_dir=args.logs,
-        log_dir_allow_dirty=True,
+        log_dir_allow_dirty=False,
+        max_tasks=MAX_CONCURRENT_TASKS,
     )
     scope = "full test set" if args.limit is None else f"limit={args.limit}"
     status = "complete" if success else "INCOMPLETE (some tasks still failing)"
