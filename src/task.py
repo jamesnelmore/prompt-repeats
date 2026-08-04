@@ -48,7 +48,10 @@ ANSWER_SCHEMA = ResponseSchema(
 
 @task
 def prompt_repeat_comparison(
-    use_cot: bool = False, prompt_repeats: int = 1, no_cot_max_tokens: int = 30
+    use_cot: bool = False,
+    prompt_repeats: int = 1,
+    no_cot_max_tokens: int = 30,
+    limit: int | None = None,
 ) -> Task:
     """Inspect Task Definition for no chain-of-thought recovery benchmark.
 
@@ -57,6 +60,11 @@ def prompt_repeat_comparison(
         prompt_repeats: How many times to repeat the question in the prompt.
         no_cot_max_tokens: Output cap for the no-CoT arm (must fit the JSON
             wrapper, not just the digits).
+        limit: Samples from the start of the dataset; None runs the whole test
+            set. This is deliberately a *task arg* rather than eval_set's own
+            `limit=`: eval_set hashes task args into the task identity but not
+            its limit, so a task run at limit=100 and then at limit=500 would
+            otherwise look like completed work and be skipped.
     """
 
     assert prompt_repeats >= 1, "Prompt repeat count must be at least 1"
@@ -79,6 +87,9 @@ def prompt_repeat_comparison(
         sample_fields=record_to_sample,
         revision=GSM8K_DATASET_REVISION,
     )
+    if limit is not None:
+        dataset = dataset[:limit]
+
     # The no-CoT arm answers as JSON, which match() cannot read.
     scorers = [match(numeric=True)] if use_cot else [pattern(r'"answer":\s*(-?\d+)')]
 
