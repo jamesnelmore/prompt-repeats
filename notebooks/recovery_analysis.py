@@ -3,7 +3,7 @@
 # ///
 """Recovery-proportion analysis of the prompt-repeat eval set.
 
-Run with:  uv run marimo edit notebooks/analysis.py
+Run with:  uv run marimo edit notebooks/recovery_analysis.py
 """
 
 import marimo
@@ -78,7 +78,11 @@ def _(CACHE_DIR, LOG_DIR, hashlib, pd, read_eval_log):
         ).hexdigest()[:12]
         cache = CACHE_DIR / f"samples-{key}.csv"
         if cache.exists():
-            return pd.read_csv(cache)
+            df = pd.read_csv(cache)
+            # Older caches used "repeats" for the same count (1 = once, 2 = twice).
+            if "repeats" in df.columns and "copies" not in df.columns:
+                df = df.rename(columns={"repeats": "copies"})
+            return df
 
         rows = []
         for path in paths:
@@ -93,11 +97,13 @@ def _(CACHE_DIR, LOG_DIR, hashlib, pd, read_eval_log):
             args = log.eval.task_args or {}
             for s in log.samples:
                 score = next(iter(s.scores.values()))
+                # Prefer prompt_copies; fall back for logs written before the rename.
+                n_copies = args.get("prompt_copies", args.get("prompt_repeats", 1))
                 rows.append(
                     {
                         "model": log.eval.model.split("/")[-1],
                         "use_cot": bool(args.get("use_cot", False)),
-                        "repeats": int(args.get("prompt_repeats", 1)),
+                        "copies": int(n_copies),
                         "sample_id": s.id,
                         "correct": score.value == "C",
                     }
@@ -117,7 +123,8 @@ def _(mo, samples):
     _models = sorted(samples.model.unique())
     mo.md(f"""
     **{len(samples):,} rows** across **{len(_models)} models**: {", ".join(_models)}.
-    Repeat levels present: {sorted(samples.loc[~samples.use_cot, "repeats"].unique())}.
+    Copy counts present: {sorted(samples.loc[~samples.use_cot, "copies"].unique())}
+    (1 = question once, 2 = twice, …).
     """)
     return
 
@@ -127,16 +134,17 @@ def _(mo):
     mo.md(r"""
     ## The metric
 
-    Raw accuracy conflates two things: how good a model is, and how much the
-    repeats help it. Recovery proportion removes the first by rescaling each
-    model onto its own span, so the models are comparable to each other:
+    Raw accuracy conflates two things: how good a model is, and how much extra
+    question copies help it. Recovery proportion removes the first by rescaling
+    each model onto its own span, so the models are comparable to each other:
 
-    $$R(r) = \frac{\text{acc}_{\text{no-CoT}}(r) - \text{acc}_{\text{no-CoT}}(1)}
+    $$R(c) = \frac{\text{acc}_{\text{no-CoT}}(c) - \text{acc}_{\text{no-CoT}}(1)}
     {\text{acc}_{\text{CoT}} - \text{acc}_{\text{no-CoT}}(1)}$$
 
-    **0** is that model's single-prompt no-CoT floor, **1** is its own CoT
-    ceiling. $R = 0.25$ means the repeats bought a quarter of what reasoning
-    buys, whatever the model's absolute accuracy.
+    where $c$ is the number of times the question appears (1 = once). **0** is
+    that model's single-copy no-CoT floor, **1** is its own CoT ceiling.
+    $R = 0.25$ means a second (or further) copy bought a quarter of what
+    reasoning buys, whatever the model's absolute accuracy.
 
     Two properties worth keeping in mind. It is a *ratio of differences*, so it
     gets unstable as the CoT gap shrinks -- the `cot_gap_pp` column below is the
@@ -154,14 +162,14 @@ def _(np, pd, samples):
     N_BOOT = 2000
 
     def recovery_frame(df: pd.DataFrame, n_boot: int = N_BOOT, seed: int = 0):
-        """Recovery proportion per (model, repeat level), with bootstrap CIs."""
+        """Recovery proportion per (model, copy count), with bootstrap CIs."""
         rng = np.random.default_rng(seed)
         rows = []
 
         for model, sub in df.groupby("model"):
             wide = (
                 sub.pivot_table(
-                    index="sample_id", columns=["use_cot", "repeats"], values="correct"
+                    index="sample_id", columns=["use_cot", "copies"], values="correct"
                 )
                 .dropna()
                 .astype(float)
@@ -180,8 +188,8 @@ def _(np, pd, samples):
             base_b = base[idx].mean(axis=1)
             gap, gap_b = cot.mean() - base.mean(), cot_b - base_b
 
-            for r in sorted(r for use_cot, r in wide.columns if not use_cot):
-                arm = wide[(False, r)].to_numpy()
+            for c in sorted(c for use_cot, c in wide.columns if not use_cot):
+                arm = wide[(False, c)].to_numpy()
                 arm_b = arm[idx].mean(axis=1)
                 with np.errstate(divide="ignore", invalid="ignore"):
                     boot = np.where(gap_b > 0, (arm_b - base_b) / gap_b, np.nan)
@@ -189,7 +197,7 @@ def _(np, pd, samples):
                 rows.append(
                     {
                         "model": model,
-                        "repeats": r,
+                        "copies": c,
                         "accuracy": arm.mean(),
                         "base_acc": base.mean(),
                         "cot_acc": cot.mean(),
@@ -219,7 +227,7 @@ def _(mo, recovery):
             base_acc=recovery.base_acc.round(3),
             cot_acc=recovery.cot_acc.round(3),
             cot_gap_pp=recovery.cot_gap_pp.round(1),
-        )[["model", "repeats", "accuracy", "recovery", "ci95",
+        )[["model", "copies", "accuracy", "recovery", "ci95",
            "base_acc", "cot_acc", "cot_gap_pp", "n"]]
     )
     return
@@ -275,7 +283,7 @@ def _(MODELS, MUTED, PALETTE, alt, chart_theme, mo, pd, recovery):
         # bars stay readable as models are added.
         rank = {m: i for i, m in enumerate(MODELS)}
         spread = 0 * (len(MODELS) - 1)
-        d["x"] = d.repeats * (
+        d["x"] = d.copies * (
             1 + spread * (d.model.map(rank) - (len(MODELS) - 1) / 2) / max(len(MODELS) - 1, 1)
         )
 
@@ -288,8 +296,8 @@ def _(MODELS, MUTED, PALETTE, alt, chart_theme, mo, pd, recovery):
             "x:Q",
             scale=alt.Scale(type="log", base=2, nice=False, padding=34),
             axis=alt.Axis(
-                values=sorted(d.repeats.unique()),
-                title="Question repeats in prompt",
+                values=sorted(d.copies.unique()),
+                title="Question copies in prompt (1 = once)",
                 labelExpr="datum.value",
             ),
         )
@@ -297,13 +305,13 @@ def _(MODELS, MUTED, PALETTE, alt, chart_theme, mo, pd, recovery):
         y = alt.Y("recovery:Q", scale=y_scale, axis=alt.Axis(format="%", title="Recovery of the CoT gap"))
 
         # label_y sits the baseline caption *below* its rule: every model is
-        # pinned to 0 at 1 repeat by construction, so the space above it is
+        # pinned to 0 at 1 copy by construction, so the space above it is
         # always occupied.
         anchors = pd.DataFrame(
             {
                 "y": [0.0, 1.0],
                 "label_y": [-0.055, 1.0],
-                "label": ["no-CoT, 1 repeat", "CoT ceiling"],
+                "label": ["no-CoT, 1 copy", "CoT ceiling"],
             }
         )
         anchor_rules = (
@@ -331,7 +339,7 @@ def _(MODELS, MUTED, PALETTE, alt, chart_theme, mo, pd, recovery):
                 color=color,
                 tooltip=[
                     alt.Tooltip("model:N", title="Model"),
-                    alt.Tooltip("repeats:Q", title="Repeats"),
+                    alt.Tooltip("copies:Q", title="Copies"),
                     alt.Tooltip("recovery:Q", format=".1%", title="Recovery"),
                     alt.Tooltip("lo:Q", format=".1%", title="CI low"),
                     alt.Tooltip("hi:Q", format=".1%", title="CI high"),
@@ -344,7 +352,7 @@ def _(MODELS, MUTED, PALETTE, alt, chart_theme, mo, pd, recovery):
         # Direct labels at the right end. Three light-mode slots are sub-3:1 on the
         # surface, so labels are the required relief, not decoration -- nudged apart
         # so they stay legible however the lines land.
-        ends = d.sort_values("repeats").groupby("model", as_index=False).last()
+        ends = d.sort_values("copies").groupby("model", as_index=False).last()
         ends = ends.sort_values("recovery", ascending=False).reset_index(drop=True)
         label_y, last = [], None
         for v in ends.recovery:
@@ -398,7 +406,7 @@ def _(mo):
     breaks beyond chance. An unpaired proportion test would throw the pairing away
     and understate the evidence.
 
-    One row per model, testing **1 repeat against 2** -- the jump where the effect
+    One row per model, testing **1 copy against 2** -- the jump where the effect
     either exists or does not. `p` is the raw two-sided p-value, `p_holm` is
     Holm-corrected across the models, and **`sig` stars anything below 1/1000**.
     Effect sizes are in the chart above; `fixed` and `broken` are the discordant
@@ -412,11 +420,11 @@ def _(mcnemar, multipletests, pd, samples):
     P_STAR = 1e-3
 
     def intervention_tests(df: pd.DataFrame) -> pd.DataFrame:
-        """McNemar 1 repeat vs 2, per model."""
+        """McNemar 1 copy vs 2 copies, per model."""
         rows = []
         for model, sub in df[~df.use_cot].groupby("model"):
             wide = (
-                sub.pivot_table(index="sample_id", columns="repeats", values="correct")
+                sub.pivot_table(index="sample_id", columns="copies", values="correct")
                 .dropna()
                 .astype(bool)
             )
@@ -477,7 +485,7 @@ def _(mo, tests):
             "sig": "center",
             "n": "right",
         },
-        label="McNemar: 1 repeat vs 2, per model",
+        label="McNemar: 1 copy vs 2 copies, per model",
     )
     tests_table
     return
@@ -493,8 +501,8 @@ def _(mo, tests):
     **{_starred} of {len(tests)}** models are starred (p < 0.001); Holm correction
     changes that for **{_flipped}** of them.
 
-    A star only says the second repeat beat the first. It says nothing about how
-    much (the chart above) or about closing the distance to CoT --- and at
+    A star only says two copies beat one. It says nothing about how much (the
+    chart above) or about closing the distance to CoT --- and at
     n={tests.n.iloc[0] if not tests.empty else "?"} paired items, roughly a
     one-point shift is enough to earn one.
     """)

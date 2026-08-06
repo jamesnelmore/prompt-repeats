@@ -18,8 +18,11 @@ Remember to put your answer on its own line at the end in the form "ANSWER: $ANS
 """.strip()
 
 # TODO double check gsm8k answers are only numbers.
+# Format must match ANSWER_SCHEMA / the local AnswerGrammar: a JSON object with
+# one integer field. The schema (or grammar) is what actually suppresses
+# reasoning; the prompt should describe the same format, not ANSWER:.
 NO_COT_PROMPT_TEMPLATE = """
-Solve the following math problem by directly outputting the answer. Your entire response should be of the form "ANSWER: $ANSWER" (without quotes) where $ANSWER is the answer to the problem. $ANSWER must be a single number. DO NOT reason before outputting the answer, output only your final response and nothing else.
+Solve the following math problem by directly outputting the answer. Your entire response must be a JSON object of the form {"answer": N} where N is a single integer. DO NOT reason before outputting the answer, output only that JSON object and nothing else.
 
 {prompt}
 """.strip()
@@ -46,22 +49,22 @@ ANSWER_SCHEMA = ResponseSchema(
 )
 
 
-def repeated_template(template: str, prompt_repeats: int) -> str:
-    """Repeat the `{prompt}` placeholder in a template `prompt_repeats` times.
+def template_with_copies(template: str, prompt_copies: int) -> str:
+    """Put `prompt_copies` copies of `{prompt}` into a template.
 
-    Shared with the mech-interp scripts so they build byte-identical prompts to
-    the ones that were actually evaluated.
+    `prompt_copies=1` means the question appears once; `2` means it appears
+    twice (back-to-back), and so on.
     """
-    assert prompt_repeats >= 1, "Prompt repeat count must be at least 1"
-    if prompt_repeats == 1:
+    assert prompt_copies >= 1, "prompt_copies must be at least 1"
+    if prompt_copies == 1:
         return template
-    return template.replace("{prompt}", "\n\n".join(["{prompt}"] * prompt_repeats))
+    return template.replace("{prompt}", "\n\n".join(["{prompt}"] * prompt_copies))
 
 
 @task
 def prompt_repeat_comparison(
     use_cot: bool = False,
-    prompt_repeats: int = 1,
+    prompt_copies: int = 1,
     no_cot_max_tokens: int = 30,
     limit: int | None = None,
 ) -> Task:
@@ -69,7 +72,8 @@ def prompt_repeat_comparison(
 
     Args:
         use_cot: Run the with-CoT ceiling arm instead of the no-CoT arm.
-        prompt_repeats: How many times to repeat the question in the prompt.
+        prompt_copies: How many times the question appears in the prompt
+            (1 = once, 2 = twice, …).
         no_cot_max_tokens: Output cap for the no-CoT arm (must fit the JSON
             wrapper, not just the digits).
         limit: Samples from the start of the dataset; None runs the whole test
@@ -79,8 +83,8 @@ def prompt_repeat_comparison(
             otherwise look like completed work and be skipped.
     """
 
-    template = repeated_template(
-        COT_PROMPT_TEMPLATE if use_cot else NO_COT_PROMPT_TEMPLATE, prompt_repeats
+    template = template_with_copies(
+        COT_PROMPT_TEMPLATE if use_cot else NO_COT_PROMPT_TEMPLATE, prompt_copies
     )
 
     # The no-CoT arm is constrained by ANSWER_SCHEMA instead, which forces the
@@ -102,7 +106,7 @@ def prompt_repeat_comparison(
     scorers = [match(numeric=True)] if use_cot else [pattern(r'"answer":\s*(-?\d+)')]
 
     name = f"gsm8k_{'cot' if use_cot else 'nocot'}" + (
-        f"_repeat{prompt_repeats}" if prompt_repeats > 1 else ""
+        f"_copies{prompt_copies}" if prompt_copies > 1 else ""
     )
 
     return Task(

@@ -1,10 +1,4 @@
-"""The eval's no-CoT arm, reproduced locally: prompts, grammar, scorer, dataset.
-
-`task.py` sends its prompts through Inspect/OpenRouter, which applies the chat
-template and enforces ANSWER_SCHEMA server-side. The mech-interp scripts run the
-model in-process, so they have to do both of those themselves; this module is
-the one copy of that logic, shared so those scripts stay byte-identical to the
-eval (and to each other) in what they feed the model and how they read it back.
+"""Prompts, grammar, scorer, and dataset loading.
 """
 
 import re
@@ -17,7 +11,7 @@ from task import (
     DATASET_PATH,
     GSM8K_DATASET_REVISION,
     NO_COT_PROMPT_TEMPLATE,
-    repeated_template,
+    template_with_copies,
 )
 
 # Constrained decoding, hardcoded for `task.py`'s ANSWER_SCHEMA: an object with a
@@ -35,7 +29,7 @@ ANSWER_PATTERN = re.compile(r'"answer":\s*(-?\d+)')
 def questions(count: int | None) -> list[tuple[str, str]]:
     """(question, reference answer) for the first `count` pinned GSM8K test rows.
 
-    `count=None` is the whole test set, matching `gemma_eval.py --limit`.
+    `count=None` is the whole test set.
     """
     dataset = load_dataset(
         DATASET_PATH, "main", split="test", revision=GSM8K_DATASET_REVISION
@@ -46,9 +40,9 @@ def questions(count: int | None) -> list[tuple[str, str]]:
     ]
 
 
-def build_prompt(tokenizer, question: str, repeats: int) -> str:
-    """The eval's user message at `repeats` repeats, with the chat template applied."""
-    user_text = repeated_template(NO_COT_PROMPT_TEMPLATE, repeats).format(
+def build_prompt(tokenizer, question: str, copies: int) -> str:
+    """The eval's user message with `copies` copies of the question (1 = once)."""
+    user_text = template_with_copies(NO_COT_PROMPT_TEMPLATE, copies).format(
         prompt=question
     )
     return tokenizer.apply_chat_template(

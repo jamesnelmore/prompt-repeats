@@ -1,18 +1,9 @@
-"""Run the CoT vs no-CoT comparison across the survey model set via OpenRouter.
+"""Test prompt-repeat effectiveness on Gemma models via OpenRouter.
+Each model is evaluated on GSM8k with CoT and without CoT given 1, 2, 4, and 8 copies of the question.
 
-Builds the task arms (CoT ceiling + no-CoT at 1/2/4/8 repeats) and crosses them
-with every model below. Inspect computes the {task} x {model} matrix and runs it.
+Run with:  python src/run_eval.py --logs logs/some-run [--limit 500]
 
-Run with:  python src/gemma_eval.py --log-dir logs/some-run [--limit 500]
-
-Uses inspect_ai.eval_set, so a re-run against the same --log-dir resumes rather than
-repeats: tasks that already completed successfully are skipped, and tasks that
-failed are retried. Deleting or changing the log directory forces a re-run.
-
---limit is passed as a task arg, not as eval_set's own limit, because eval_set
-hashes task args into the task identity but not its limit. Changing --limit
-therefore yields new task identities and reruns the matrix, instead of silently
-matching the previous run's logs and reporting everything as already done.
+Uses inspect_ai.eval_set, so a re-run with the same log directory resumes progress instead of overwriting.
 """
 
 import argparse
@@ -29,27 +20,24 @@ def arms(limit: int | None) -> list:
     return [
         prompt_repeat_comparison(use_cot=True, limit=limit),
         *[
-            prompt_repeat_comparison(use_cot=False, prompt_repeats=r, limit=limit)
+            prompt_repeat_comparison(use_cot=False, prompt_copies=r, limit=limit)
             for r in (1, 2, 4, 8)
         ],
     ]
 
 
 # (model, provider, quantization)
+# OpenRouter providers are pinned for reproducibility.
+# As of August 6, 2026, gemma-3-27b-it is not served in bf16 on Openrouter by a provider that supports structured responses.
 MODELS: list[tuple[str, str, str | None]] = [
     ("google/gemma-4-26b-a4b-it", "NextBit", "bf16"),
     ("google/gemma-4-31b-it", "CoreWeave", "bf16"),
-    # (August 2026) DeepInfra is currently the only provider serving gemma-3-4b,
-    # and the no-CoT arm needs a route that honours response_format.
     ("google/gemma-3-4b-it", "DeepInfra", "bf16"),
     ("google/gemma-3-12b-it", "DeepInfra", "bf16"),
-    # Only one in fp8.
-    # The bf16 endpoint does not support structured outputs (August 2026).
-    # A more careful investigation should standarize quantization and likely cannot use OpenRouter.
     ("google/gemma-3-27b-it", "DeepInfra", "fp8"),
 ]
 
-# Pinning Openrouter providers dramatically increases rate limiting
+# Reduces rate limiting. Pinning providers makes this wors.
 MAX_CONCURRENT_TASKS = 3
 
 
@@ -73,7 +61,7 @@ def pinned_models(only: str | None = None) -> list[Model]:
         if quantization is not None:
             routing["quantizations"] = [quantization]
         # Inspect's OpenRouter provider forwards `provider` as extra_body.provider,
-        # and records it in the .eval log, so each log states how it was routed.
+        # and records it in the .eval log
         models.append(get_model(f"openrouter/{name}", provider=routing))
     return models
 
@@ -96,7 +84,6 @@ def parse_args() -> argparse.Namespace:
         "--models",
         default=None,
         help="Substring filter over MODELS, e.g. 'gemma-3-4b'. Omit to run all. "
-        "Use this to add a model without re-running the ones already logged.",
     )
     return parser.parse_args()
 
