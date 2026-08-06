@@ -7,12 +7,10 @@ quadrant can be read off directly.
 
 Defaults to Qwen/Qwen3-0.6B so the whole thing runs on a laptop CPU.
 
-The prompt text and repeat logic come from `task.py`, so these are the same
-prompts the eval sends; the model's own chat template is applied here because
-OpenRouter applies it server-side. Decoding is constrained to `task.py`'s
-ANSWER_SCHEMA (see ANSWER_PREFIX below) and scored with the eval's own regex, so
-the completions match the eval's no-CoT arm -- that constrains the sampled tokens
-only, not the prompt, so it does not affect the attention measured here.
+Prompts, constrained decoding and scoring all come from `nocot_eval`, so these
+are the prompts the eval sends and the completions are read exactly as the eval
+read them -- the grammar constrains the sampled tokens only, not the prompt, so
+it does not affect the attention measured here.
 
 Heads are ranked by cross-copy mass, averaged over all 10 questions: the share of
 a copy-2 token's attention that lands anywhere in copy 1. The viz then shows the
@@ -23,38 +21,19 @@ Run with:  python src/cross_copy_vis.py --out results/cross_copy
 
 import argparse
 import json
-import re
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import torch
 from circuitsvis.attention import attention_heads
-from datasets import load_dataset
 from dotenv import find_dotenv, load_dotenv
 from tqdm import tqdm
 from transformer_lens import HookedTransformer
 
-from task import (
-    DATASET_PATH,
-    GSM8K_DATASET_REVISION,
-    NO_COT_PROMPT_TEMPLATE,
-    repeated_template,
-)
+from nocot_eval import AnswerGrammar, build_grammar, build_prompt, questions, scored
 
 MODEL_NAME = "Qwen/Qwen3-0.6B"
 REPEATS = 2
-
-# Constrained decoding, hardcoded for `task.py`'s ANSWER_SCHEMA: an object with a
-# single integer "answer". The prefix is force-fed, then only digits (and a
-# leading "-") are decodable, so no token sequence can reason first -- the same
-# thing the eval's response_schema buys from the provider. This is a grammar for
-# that one schema, not a general JSON-schema enforcer: change ANSWER_SCHEMA and
-# this has to change with it.
-ANSWER_PREFIX = '{"answer": '
-ANSWER_CLOSE = "}"
-# The eval's own scorer, so a completion here is read exactly as the eval read it.
-ANSWER_PATTERN = re.compile(r'"answer":\s*(-?\d+)')
 
 
 def pick_device() -> str:
@@ -62,29 +41,6 @@ def pick_device() -> str:
     # 0.6B runs on cpu in about a minute per question anyway. Pass --device mps
     # to override.
     return "cuda" if torch.cuda.is_available() else "cpu"
-
-
-def questions(count: int) -> list[tuple[str, str]]:
-    """(question, reference answer) for the first `count` pinned GSM8K test rows."""
-    dataset = load_dataset(
-        DATASET_PATH, "main", split="test", revision=GSM8K_DATASET_REVISION
-    )
-    return [
-        (dataset[i]["question"], dataset[i]["answer"].split("####")[-1].strip())
-        for i in range(count)
-    ]
-
-
-def build_prompt(tokenizer, question: str) -> str:
-    user_text = repeated_template(NO_COT_PROMPT_TEMPLATE, REPEATS).format(
-        prompt=question
-    )
-    return tokenizer.apply_chat_template(
-        [{"role": "user", "content": user_text}],
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
 
 
 def copy_positions(
@@ -122,58 +78,6 @@ def copy_positions(
     return torch.tensor([encoding["input_ids"]]), tokens, copy1, copy2
 
 
-@dataclass
-class AnswerGrammar:
-    """Token ids the ANSWER_SCHEMA grammar can emit, resolved for one tokenizer."""
-
-    prefix: torch.Tensor  # Force-fed: '{"answer": '
-    digits: torch.Tensor  # Every all-digit token in the vocabulary.
-    close: int  # '}', which ends the integer.
-    minus: int | None  # Legal only as the first character; None if multi-token.
-
-    def allowed(self, emitted: int) -> torch.Tensor:
-        """Ids decodable after `emitted` digit tokens."""
-        if emitted == 0:
-            extra = [] if self.minus is None else [self.minus]
-        else:
-            extra = [self.close]  # Closing early is the model's choice of length.
-        if not extra:
-            return self.digits
-        tail = torch.tensor(extra, device=self.digits.device)
-        return torch.cat([self.digits, tail])
-
-
-def build_grammar(tokenizer, device: str) -> AnswerGrammar:
-    """Resolve the schema's literals and the digit allowlist against the vocabulary.
-
-    Derived from the tokenizer rather than hardcoded ids, so pointing --model at
-    a different family (gemma) needs no edit here.
-    """
-
-    def single(text: str) -> int | None:
-        ids = tokenizer(text, add_special_tokens=False)["input_ids"]
-        return int(ids[0]) if len(ids) == 1 else None
-
-    # Multi-digit tokens are allowed and count as one step; "01" style leading
-    # zeros are legal JSON-wise here but the scorer's regex reads them fine.
-    digits = [
-        token_id
-        for token_id in range(tokenizer.vocab_size)
-        if (piece := tokenizer.decode([token_id])) != "" and piece.isdigit()
-    ]
-    close = single(ANSWER_CLOSE)
-    assert close is not None, f"{ANSWER_CLOSE!r} is not a single token"
-    return AnswerGrammar(
-        prefix=torch.tensor(
-            [tokenizer(ANSWER_PREFIX, add_special_tokens=False)["input_ids"]],
-            device=device,
-        ),
-        digits=torch.tensor(digits, device=device),
-        close=close,
-        minus=single("-"),
-    )
-
-
 def constrained_answer(
     model: HookedTransformer,
     tokens: torch.Tensor,
@@ -202,7 +106,7 @@ def measure(
     model: HookedTransformer, question: str, grammar: AnswerGrammar, max_digits: int
 ) -> dict:
     """One forward pass plus a greedy completion, for a single question."""
-    prompt = build_prompt(model.tokenizer, question)
+    prompt = build_prompt(model.tokenizer, question, REPEATS)
     token_tensor, tokens, copy1, copy2 = copy_positions(
         model.tokenizer, prompt, question
     )
@@ -237,12 +141,6 @@ def measure(
         "tokens": [tokens[index] for index in keep],
         "width": width,
     }
-
-
-def scored(completion: str, reference: str) -> bool:
-    """The eval's no-CoT scorer, applied to the constrained completion."""
-    found = ANSWER_PATTERN.search(completion)
-    return found is not None and found.group(1) == reference
 
 
 def top_heads(mass: np.ndarray, count: int) -> list[tuple[int, int]]:
@@ -301,7 +199,7 @@ all questions; each head's mean mass and its mass on the question shown are in t
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", default="results/qwen_cross_copy")
+    parser.add_argument("--out", default="results/cross_copy")
     parser.add_argument(
         "--model",
         default=MODEL_NAME,
@@ -331,12 +229,15 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     load_dotenv(find_dotenv(usecwd=True))  # HF_TOKEN, if the cache is cold.
 
-    print(f"Loading {args.model}...")
+    print(f"Loading {args.model} on {args.device}...")
     model = HookedTransformer.from_pretrained(
         args.model, device=args.device, dtype=getattr(torch, args.dtype)
     )
+
+    print(f"Building grammar on {args.device}")
     grammar = build_grammar(model.tokenizer, args.device)
 
+    print("starting eval")
     runs, correct = [], []
     for index, (question, reference) in tqdm(enumerate(questions(args.questions))):
         run = measure(model, question, grammar, args.max_digits)
