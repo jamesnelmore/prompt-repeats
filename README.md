@@ -1,12 +1,23 @@
-# Testing Usefullness of Repeating Prompts in Open Weight LLMs and examining mechanistic explantions of why
+# Repeating a prompt once is useful for nonreasoning models
+
+> tldr;
+> - Behavior shows up at about 27b in Gemma
+> - Effect size is roughly *XX*
+> 
+
+Hypothesis: Gain primarily comes from allowing early tokens in the prompt to attend to later tokens.
+- Test by ablating each copy2 token's attention to tokens after it in copy1.
+
 
 Preliminary results (see `notebooks/blackbox_analysis.py for more info`)
 - Sending a prompt twice shows statistically significent improvement for GSM8k on all tested models with more than 4b parameters
 - Repeating more than twice doesn't appear to add anything.
 
-## Cross-copy pathways ablatio (Agent summary)
+## Cross-copy attention ablation
 
-Does the 2-repeat gain need copy 2 to read copy 1, or the answer to read copy 1 directly? On no-CoT GSM8K (full test, n=1319), we zero each path alone (`src/cross_copy_ablation.py`; results in `results/cross_copy_ablation_pathways_*`). Accuracies with Wilson 95% CIs:
+`src/run_ablation.py` runs six white-box arms: one copy, the unmasked two-copy
+baseline, blocks from copy 1 to answer or copy 2, and strict/past-or-aligned
+cross-copy masks. Historical pathway results (full no-CoT GSM8K, n=1319):
 
 | condition | gemma-3-12b-it | gemma-3-27b-it |
 |---|---:|---:|

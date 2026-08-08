@@ -1,7 +1,7 @@
 """Test prompt-repeat effectiveness on Gemma models via OpenRouter.
 Each model is evaluated on GSM8k with CoT and without CoT given 1, 2, 4, and 8 copies of the question.
 
-Run with:  python src/run_eval.py --logs logs/some-run [--limit 500]
+Run with: python src/openrouter_survey.py --logs logs/some-run [--limit 500]
 
 Uses inspect_ai.eval_set, so a re-run with the same log directory resumes progress instead of overwriting.
 """
@@ -12,7 +12,7 @@ import inspect_ai
 from dotenv import find_dotenv, load_dotenv
 from inspect_ai.model import Model, get_model
 
-from task import prompt_repeat_comparison
+from openrouter_task import prompt_repeat_comparison
 
 
 def arms(limit: int | None) -> list:
