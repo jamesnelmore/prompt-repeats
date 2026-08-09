@@ -16,7 +16,7 @@ Remember to put your answer on its own line at the end in the form "ANSWER: $ANS
 """.strip()
 
 NO_COT_PROMPT_TEMPLATE = """
-Solve the following math problem by directly outputting the answer. Your entire response must be a JSON object of the form {"answer": N} where N is a single integer. DO NOT reason before outputting the answer, output only that JSON object and nothing else.
+Solve the following math problem by directly outputting the answer. Your entire response must be a JSON object of the form {{"answer": N}} where N is a single integer. DO NOT reason before outputting the answer, output only that JSON object and nothing else.
 
 {prompt}
 """.strip()
