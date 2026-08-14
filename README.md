@@ -1,29 +1,41 @@
-# Repeating a prompt once is useful for nonreasoning models
+# Copying a prompt once is useful for nonreasoning models
 
-> tldr;
-> - Behavior shows up at about 27b in Gemma
-> - Effect size is roughly *XX*
-> 
+For preliminary results see `notebooks/early_results.py`.
+To open, run `uv sync --frozen` then `uv run marimo view notebooks/early_results.py`.
 
-Hypothesis: Gain primarily comes from allowing early tokens in the prompt to attend to later tokens.
-- Test by ablating each copy2 token's attention to tokens after it in copy1.
+## Headline Results (tenative)
+- LLM nonreasoning performance on GSM8k improves when a model is shown 2 copies of the prompt. [Past work](https://blog.redwoodresearch.org/p/recent-llms-can-use-filler-tokens) found a similar result for frontier models, this repo shows it replicates to open weight models as well, specifically the gemma 3/4 family above 4 billion parameters
+- Attention knockout experments show that blocking copy 2 of the prompt from attending to copy 1 degrades performance to roughly single copy levels. 
+- Current hypothesis being tested is that the model uses the first copy to let the second copy "look into the future" and get around attention masking to gain information 
 
+## More information
 
-Preliminary results (see `notebooks/blackbox_analysis.py for more info`)
-- Sending a prompt twice shows statistically significent improvement for GSM8k on all tested models with more than 4b parameters
-- Repeating more than twice doesn't appear to add anything.
+[Past work](https://blog.redwoodresearch.org/p/recent-llms-can-use-filler-tokens) by Ryan Greenblatt found that non-reasoning performance for frontier models is improved by copying a prompt multiple times. Normally, an LLM input might look something like this:
 
-## Cross-copy attention ablation
+```
+User:
+	[Instructions]
 
-`src/run_ablation.py` runs six white-box arms: one copy, the unmasked two-copy
-baseline, blocks from copy 1 to answer or copy 2, and strict/past-or-aligned
-cross-copy masks. Historical pathway results (full no-CoT GSM8K, n=1319):
+	[Question]
 
-| condition | gemma-3-12b-it | gemma-3-27b-it |
-|---|---:|---:|
-| repeat1 | 21.8% [19.7, 24.1] | 31.2% [28.8, 33.8] |
-| repeat2 | 25.6% [23.3, 28.0] | 37.5% [35.0, 40.2] |
-| mask_copy2 (c1→answer only) | 20.1% [18.0, 22.3] | 30.3% [27.8, 32.8] |
-| mask_answer (c1→c2 only) | 20.9% [18.7, 23.1] | 35.8% [33.2, 38.4] |
+Assistant:
+	ANSWER:
+```
 
-On 27b, `mask_copy2` clearly drops accuracy (to ~repeat1); `mask_answer` is not clearly below `repeat2` (CIs overlap). So what matters is a **c1 → c2 → answer** chain — answer attending to c1 directly is not important.
+He found that this:
+
+```
+User:
+	[Instructions]
+
+	[Question copy 1]
+	[Question copy 2]
+	[Question copy 3]
+	...
+
+Assistant:
+	ANSWER:
+```
+
+improves performance in certain frontier LLMs.
+

@@ -1,0 +1,575 @@
+{
+  "eval_set_id": "LrvUxUAaywEm63SocrZ9dD",
+  "tasks": [
+    {
+      "name": "gsm8k_cot",
+      "task_id": "jfC8Z5cTu4MUJkt6KF2Q55",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": true,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-26b-a4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "NextBit"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 0
+    },
+    {
+      "name": "gsm8k_nocot",
+      "task_id": "RLWnybfjt5NEgwuM3XHRhK",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 1,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-26b-a4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "NextBit"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 1
+    },
+    {
+      "name": "gsm8k_nocot_repeat2",
+      "task_id": "exSVPBUSrPfT3nwNUFUutK",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 2,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-26b-a4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "NextBit"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 2
+    },
+    {
+      "name": "gsm8k_nocot_repeat4",
+      "task_id": "oBxqSKWwUpowXaN4GomE3Q",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 4,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-26b-a4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "NextBit"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 3
+    },
+    {
+      "name": "gsm8k_nocot_repeat8",
+      "task_id": "TThBAueCRAbUmNHVCBxDLq",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 8,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-26b-a4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "NextBit"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 4
+    },
+    {
+      "name": "gsm8k_cot",
+      "task_id": "7RTkRKWt52PXpGthHctjmv",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": true,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-31b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "CoreWeave"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 0
+    },
+    {
+      "name": "gsm8k_nocot",
+      "task_id": "boXGL7kz6KGkjxiadoCDoH",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 1,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-31b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "CoreWeave"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 1
+    },
+    {
+      "name": "gsm8k_nocot_repeat2",
+      "task_id": "Vn5LGGVG3YmUFqkqQYW7F6",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 2,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-31b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "CoreWeave"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 2
+    },
+    {
+      "name": "gsm8k_nocot_repeat4",
+      "task_id": "e7CHPZVPmwrengMzvXjuMF",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 4,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-31b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "CoreWeave"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 3
+    },
+    {
+      "name": "gsm8k_nocot_repeat8",
+      "task_id": "Tcqo8aZj8qrXYFwDQV4ZFe",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 8,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-4-31b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "CoreWeave"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 4
+    },
+    {
+      "name": "gsm8k_cot",
+      "task_id": "GqXPLLnsbXzyEAiHjxbeDe",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": true,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 0
+    },
+    {
+      "name": "gsm8k_nocot",
+      "task_id": "N74vj6tbSreqCQVaQbxnKR",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 1,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 1
+    },
+    {
+      "name": "gsm8k_nocot_repeat2",
+      "task_id": "biWL5KL4UPRJNxrbJV3R7N",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 2,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 2
+    },
+    {
+      "name": "gsm8k_nocot_repeat4",
+      "task_id": "DD5448bRrdwxoYCdbbiPUd",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 4,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 3
+    },
+    {
+      "name": "gsm8k_nocot_repeat8",
+      "task_id": "7pYKWSVDmPxfngrCzTHAq5",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 8,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-4b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 4
+    },
+    {
+      "name": "gsm8k_cot",
+      "task_id": "iCLroTLGtujuKkpZMHU6CH",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": true,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-12b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 0
+    },
+    {
+      "name": "gsm8k_nocot",
+      "task_id": "36Ref9WcZASBSvAeYEruiy",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 1,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-12b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 1
+    },
+    {
+      "name": "gsm8k_nocot_repeat2",
+      "task_id": "TH9AcNkpHCB3tNyysanJ2u",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 2,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-12b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 2
+    },
+    {
+      "name": "gsm8k_nocot_repeat4",
+      "task_id": "YHpEmaZr87mWH84MEjRVwa",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 4,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-12b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 3
+    },
+    {
+      "name": "gsm8k_nocot_repeat8",
+      "task_id": "5nhYstd7BqNmFpFP7Hh7NG",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 8,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-12b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "bf16"
+          ]
+        }
+      },
+      "sequence": 4
+    },
+    {
+      "name": "gsm8k_cot",
+      "task_id": "8oLxs559fBLpDRSRQcSEKi",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": true,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-27b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "fp8"
+          ]
+        }
+      },
+      "sequence": 0
+    },
+    {
+      "name": "gsm8k_nocot",
+      "task_id": "VEkfAFzdWuoUG7nVjYGmwy",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 1,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-27b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "fp8"
+          ]
+        }
+      },
+      "sequence": 1
+    },
+    {
+      "name": "gsm8k_nocot_repeat2",
+      "task_id": "CspfpVrT3NAZn3gcstzfQy",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 2,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-27b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "fp8"
+          ]
+        }
+      },
+      "sequence": 2
+    },
+    {
+      "name": "gsm8k_nocot_repeat4",
+      "task_id": "m6JmiuYJz2yqXnK5es4hwi",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 4,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-27b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "fp8"
+          ]
+        }
+      },
+      "sequence": 3
+    },
+    {
+      "name": "gsm8k_nocot_repeat8",
+      "task_id": "9EhbHu2fMY3QViE9yQ6q9K",
+      "task_file": "src/task.py",
+      "task_args": {
+        "use_cot": false,
+        "prompt_repeats": 8,
+        "limit": null
+      },
+      "model": "openrouter/google/gemma-3-27b-it",
+      "model_args": {
+        "provider": {
+          "order": [
+            "DeepInfra"
+          ],
+          "allow_fallbacks": false,
+          "quantizations": [
+            "fp8"
+          ]
+        }
+      },
+      "sequence": 4
+    }
+  ]
+}

@@ -17,3 +17,4 @@ wheels/
 /results/
 logs/
 __marimo__
+.DS_Store
