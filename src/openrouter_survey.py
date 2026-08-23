@@ -1,5 +1,6 @@
 """Test prompt-repeat effectiveness on Gemma models via OpenRouter.
-Each model is evaluated on GSM8k with CoT and without CoT given 1, 2, 4, and 8 copies of the question.
+Each model is evaluated on GSM8k with and without CoT at 1, 2, 4, and 8
+copies of the question.
 
 Run with: python src/openrouter_survey.py --logs logs/some-run [--limit 500]
 
@@ -14,14 +15,16 @@ from inspect_ai.model import Model, get_model
 
 from openrouter_task import prompt_repeat_comparison
 
+COPY_COUNTS = (1, 2, 4, 8)
+
 
 def arms(limit: int | None) -> list:
     """The arms. Inspect crosses these with every model below."""
     return [
-        prompt_repeat_comparison(use_cot=True, limit=limit),
         *[
-            prompt_repeat_comparison(use_cot=False, prompt_copies=r, limit=limit)
-            for r in (1, 2, 4, 8)
+            prompt_repeat_comparison(use_cot=use_cot, prompt_copies=n, limit=limit)
+            for use_cot in (True, False)
+            for n in COPY_COUNTS
         ],
     ]
 

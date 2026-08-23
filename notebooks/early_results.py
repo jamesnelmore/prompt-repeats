@@ -31,6 +31,7 @@ def _():
 @app.cell
 def _():
     import hashlib
+    import math
     from pathlib import Path
 
     import altair as alt
@@ -62,6 +63,7 @@ def _():
         Path,
         alt,
         hashlib,
+        math,
         mcnemar,
         multipletests,
         np,
@@ -712,6 +714,188 @@ def _(
                     "ci_low": "{:.1%}".format,
                     "ci_high": "{:.1%}".format,
                     "n": "{:,}".format,
+                },
+            ),
+        ]
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Paired tests (McNemar + Holm)
+
+    Same GSM8K items on every arm. Per model: `repeat_effect` = 2copies vs 1copy;
+    `vs_2copies` / `vs_1copy` = each masked arm vs those baselines. Holm correction
+    is within-model across that model's comparisons. `delta` is paired accuracy
+    change of `arm` relative to `reference` (percentage points).
+    """)
+    return
+
+
+@app.cell
+def _(
+    BASELINE,
+    DISPLAY,
+    SINGLE,
+    by_size,
+    math,
+    mcnemar,
+    multipletests,
+    pd,
+    short,
+    wide,
+):
+    ALPHA = 0.05
+
+    def paired_test(base: pd.Series, arm: pd.Series) -> dict[str, float]:
+        n = len(base)
+        broken = int((base & ~arm).sum())
+        fixed = int((~base & arm).sum())
+        table = [
+            [int((base & arm).sum()), broken],
+            [fixed, int((~base & ~arm).sum())],
+        ]
+        res = mcnemar(table, exact=(broken + fixed) < 25, correction=True)
+        delta = (fixed - broken) / n
+        var = max((broken + fixed) - (fixed - broken) ** 2 / n, 0.0)
+        se = math.sqrt(var) / n
+        return {
+            "n": n,
+            "broken": broken,
+            "fixed": fixed,
+            "delta": delta,
+            "delta_low": delta - 1.96 * se,
+            "delta_high": delta + 1.96 * se,
+            "p": float(res.pvalue),
+        }
+
+    _masked = [a for a in wide.columns if a not in (BASELINE, SINGLE)]
+    _plan = [("repeat_effect", SINGLE, BASELINE)]
+    _plan += [("vs_2copies", BASELINE, arm) for arm in _masked]
+    _plan += [("vs_1copy", SINGLE, arm) for arm in _masked]
+
+    _rows = []
+    for model, sub in wide.groupby(level="model"):
+        for family, reference, arm in _plan:
+            _rows.append(
+                {
+                    "model": short[model],
+                    "family": family,
+                    "reference": DISPLAY.get(reference, reference),
+                    "arm": DISPLAY.get(arm, arm),
+                    **paired_test(sub[reference], sub[arm]),
+                }
+            )
+    ablation_tests = pd.DataFrame(_rows)
+    ablation_tests["p_holm"] = ablation_tests.groupby("model").p.transform(
+        lambda p: multipletests(p, method="holm")[1]
+    )
+    ablation_tests["sig"] = ablation_tests.p_holm < ALPHA
+    ablation_tests = ablation_tests.sort_values(
+        "model", key=lambda c: c.map(by_size), kind="stable"
+    ).reset_index(drop=True)
+    return ALPHA, ablation_tests
+
+
+@app.cell
+def _(ablation_tests, by_size, mo, pd):
+    def _fmt_p(v: float) -> str:
+        return f"{v:.2e}" if v < 1e-3 else f"{v:.3f}"
+
+    def _fmt_pp(v: float) -> str:
+        return f"{v * 100:+.2f}"
+
+    _view = ablation_tests.assign(sig=ablation_tests.sig.map({True: "*", False: ""}))[
+        [
+            "model",
+            "family",
+            "reference",
+            "arm",
+            "broken",
+            "fixed",
+            "delta",
+            "delta_low",
+            "delta_high",
+            "p",
+            "p_holm",
+            "sig",
+        ]
+    ]
+
+    _base_label, _single_label = "2 copies", "1 copy"
+    _vs_base = ablation_tests[ablation_tests.family == "vs_2copies"].set_index(
+        ["model", "arm"]
+    )
+    _vs_one = ablation_tests[ablation_tests.family == "vs_1copy"].set_index(
+        ["model", "arm"]
+    )
+    _has_gain = (
+        ablation_tests[ablation_tests.family == "repeat_effect"]
+        .set_index("model")
+        .apply(lambda r: bool(r.sig and r.delta > 0), axis=1)
+        .to_dict()
+    )
+    _verdicts = []
+    for key, base_row in _vs_base.iterrows():
+        one_row = _vs_one.loc[key]
+        hurts = bool(base_row.sig and base_row.delta < 0)
+        above_single = bool(one_row.sig and one_row.delta > 0)
+        if not _has_gain[key[0]]:
+            verdict = "n/a — no established repeat gain"
+        elif not hurts:
+            verdict = f"no detectable role (≈ {_base_label})"
+        elif above_single:
+            verdict = "carries part of the gain"
+        else:
+            verdict = f"carries the whole gain (≈ {_single_label})"
+        _verdicts.append(
+            {
+                "model": key[0],
+                "blocked pathway": key[1],
+                f"vs {_base_label} (pp)": base_row.delta * 100,
+                f"vs {_single_label} (pp)": one_row.delta * 100,
+                "verdict": verdict,
+            }
+        )
+    verdicts = (
+        pd.DataFrame(_verdicts)
+        .sort_values(
+            ["model", f"vs {_base_label} (pp)"],
+            key=lambda c: c.map(by_size) if c.name == "model" else c,
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
+
+    mo.vstack(
+        [
+            mo.ui.table(
+                _view,
+                selection=None,
+                pagination=False,
+                show_column_summaries=False,
+                show_data_types=False,
+                format_mapping={
+                    "delta": _fmt_pp,
+                    "delta_low": _fmt_pp,
+                    "delta_high": _fmt_pp,
+                    "p": _fmt_p,
+                    "p_holm": _fmt_p,
+                },
+                label="McNemar ablation contrasts (Holm within model)",
+            ),
+            mo.md("### Verdict per blocked pathway"),
+            mo.ui.table(
+                verdicts,
+                selection=None,
+                pagination=False,
+                show_column_summaries=False,
+                show_data_types=False,
+                format_mapping={
+                    f"vs {_base_label} (pp)": "{:+.2f}".format,
+                    f"vs {_single_label} (pp)": "{:+.2f}".format,
                 },
             ),
         ]
