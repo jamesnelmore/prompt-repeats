@@ -486,11 +486,18 @@ def _(Path, pd, pretty_model):
         "2copies": "2 copies",
         "block_copy2_from_copy1": "block copy 2",
         "block_answer_from_copy1": "block answer",
-        "copy2_strictly_past_copy1": "Cross-copy causal (strict)",
-        "copy2_past_or_aligned_copy1": "Cross-copy causal (inclusive)",
+        "copy2_strictly_past_copy1": "Cross-copy past (strict)",
+        "copy2_past_or_aligned_copy1": "Cross-copy past (inclusive)",
+        "copy2_strictly_future_copy1": "Cross-copy future (strict)",
+        "copy2_future_or_aligned_copy1": "Cross-copy future (inclusive)",
     }
     PATHWAY_ARMS = ["block_copy2_from_copy1", "block_answer_from_copy1"]
-    CAUSAL_ARMS = ["copy2_strictly_past_copy1", "copy2_past_or_aligned_copy1"]
+    CAUSAL_ARMS = [
+        "copy2_strictly_past_copy1",
+        "copy2_past_or_aligned_copy1",
+        "copy2_strictly_future_copy1",
+        "copy2_future_or_aligned_copy1",
+    ]
 
     def by_size(tag: str) -> float:
         digits = "".join(c for c in tag if c.isdigit())
@@ -631,20 +638,22 @@ def _(mo):
     ## Which parts?
 
 
-    - New intervention: Prevent each token in copy2 from attending to copy1 tokens that come after it.
+    - Look-back intervention: each copy2 token can attend only to copy1 tokens
+      that come before it (past triangle).
+    - Look-forward intervention: the reverse — each copy2 token can attend only
+      to copy1 tokens that come after it (future triangle).
 
-    The two causal interventions differ only at the diagonal — whether
-    copy 2 token *i* can see the *aligned* copy 1 token at the same
-    ordinal position:
+    Each direction has a strict and an inclusive variant. They differ only at
+    the diagonal — whether copy 2 token *i* can see the *aligned* copy 1 token
+    at the same ordinal position:
 
     ```
       Copy 1 token position:   t1  t2  t3  t4  t5
                                 ────────────────────
-      Copy 2 token t1 sees:   [.]  x   x   x   x    <- inclusive: aligned; strict: nothing
-      Copy 2 token t2 sees:    v  [.]  x   x   x    <- inclusive: t1+t2; strict: t1 only
-      Copy 2 token t3 sees:    v   v  [.]  x   x
-      Copy 2 token t4 sees:    v   v   v  [.]  x
-      Copy 2 token t5 sees:    v   v   v   v  [.]
+      Look back, copy 2 token t3 sees:
+                               v   v  [.]  x   x    <- inclusive: t1+t2+t3; strict: t1+t2
+      Look forward, copy 2 token t3 sees:
+                               x   x  [.]  v   v    <- inclusive: t3+t4+t5; strict: t4+t5
 
       v = allowed   x = blocked   [.] = aligned position (allowed in inclusive, blocked in strict)
     ```
@@ -701,7 +710,9 @@ def _(
         [
             mo.md(
                 "Restricting copy2→copy1 attention to past (or past+aligned) tokens "
-                "removes most of the two-copy gain."
+                "removes most of the two-copy gain. The reverse — only future "
+                "(or future+aligned) tokens — tests whether looking ahead is "
+                "what carries the gain."
             ),
             mo.ui.altair_chart((causal_err + causal_chart).properties(width=520, height=280)),
             mo.ui.table(
@@ -906,7 +917,9 @@ def _(ablation_tests, by_size, mo, pd):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    **Next Experiment:** Do the reverse, i.e. block each copy2 token from attending to copy1 tokens that come before it, and hopefully see that it does very little.
+    **Look-forward prediction:** blocking past copy1 tokens (the reverse triangle)
+    should do very little if the two-copy gain is from copy 2 looking into the
+    future of copy 1.
     """)
     return
 

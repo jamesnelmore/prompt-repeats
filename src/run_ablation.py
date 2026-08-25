@@ -1,4 +1,4 @@
-"""Run six white-box attention ablations for repeated GSM8K questions."""
+"""Run white-box attention ablations for repeated GSM8K questions."""
 
 from __future__ import annotations
 
@@ -63,12 +63,14 @@ class SampleRecord(TypedDict):
 
 
 ARMS = (
-    Arm("1copy", 1, None),
-    Arm(BASELINE, 2, None),
-    Arm("block_answer_from_copy1", 2, "answer"),
-    Arm("block_copy2_from_copy1", 2, "copy2"),
-    Arm("copy2_strictly_past_copy1", 2, "strictly_past"),
-    Arm("copy2_past_or_aligned_copy1", 2, "past_or_aligned"),
+    # Arm("1copy", 1, None),
+    # Arm(BASELINE, 2, None),
+    # Arm("block_answer_from_copy1", 2, "answer"),
+    # Arm("block_copy2_from_copy1", 2, "copy2"),
+    # Arm("copy2_strictly_past_copy1", 2, "strictly_past"),
+    # Arm("copy2_past_or_aligned_copy1", 2, "past_or_aligned"),
+    Arm("copy2_strictly_future_copy1", 2, "strictly_future"),
+    Arm("copy2_future_or_aligned_copy1", 2, "future_or_aligned"),
 )
 MASKED_ARMS = tuple(arm for arm in ARMS if arm.mask is not None)
 

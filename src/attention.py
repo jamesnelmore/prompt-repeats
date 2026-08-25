@@ -13,7 +13,27 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from gsm8k import ANSWER_CLOSE, ANSWER_PREFIX, no_cot_prompt
 
-type Mask = Literal["answer", "copy2", "strictly_past", "past_or_aligned"] | None
+type Mask = (
+    Literal[
+        "answer",
+        "copy2",
+        "strictly_past",
+        "past_or_aligned",
+        "strictly_future",
+        "future_or_aligned",
+    ]
+    | None
+)
+
+# Triangular copy2→copy1 masks: each copy-2 token has a different cutoff in copy 1.
+CROSS_COPY_MASKS: frozenset[str] = frozenset(
+    {
+        "strictly_past",
+        "past_or_aligned",
+        "strictly_future",
+        "future_or_aligned",
+    }
+)
 
 
 @dataclass
@@ -86,7 +106,7 @@ class Prompt:
     aligned2: np.ndarray
 
     def blocked_queries(self, mask: Mask, total_length: int) -> np.ndarray:
-        if mask is None or mask in {"strictly_past", "past_or_aligned"}:
+        if mask is None or mask in CROSS_COPY_MASKS:
             return np.array([], dtype=int)
         if mask == "copy2":
             return self.copy2
@@ -185,9 +205,13 @@ def causal_cross_bias(
     aligned1: np.ndarray,
     aligned2: np.ndarray,
     include_aligned: bool,
+    look_forward: bool,
     dtype: torch.dtype,
 ) -> torch.Tensor:
-    """Return causal bias where copy2[i] reads copy1[j < i] or copy1[j <= i].
+    """Return causal bias where copy2[i] reads a triangle of copy1.
+
+    Past: copy2[i] reads copy1[j < i], or copy1[j <= i] if `include_aligned`.
+    Forward: copy2[i] reads copy1[j > i], or copy1[j >= i] if `include_aligned`.
 
     Unlike `blocked_bias`, this blocks a triangle inside the copy2 × copy1
     rectangle: every copy-2 token gets a different cutoff in copy 1.
@@ -205,12 +229,14 @@ def causal_cross_bias(
         q_i = query_index[query_positions]
         k_j = key_index
         cross_copy = (q_i[:, None] >= 0) & (k_j[None, :] >= 0)
-        # Strict-past blocks j >= i; past-or-aligned blocks only j > i.
-        blocked = (
-            k_j[None, :] > q_i[:, None]
-            if include_aligned
-            else k_j[None, :] >= q_i[:, None]
-        )
+        k = k_j[None, :]
+        q = q_i[:, None]
+        if look_forward:
+            # Strict-future blocks j <= i; future-or-aligned blocks only j < i.
+            blocked = k < q if include_aligned else k <= q
+        else:
+            # Strict-past blocks j >= i; past-or-aligned blocks only j > i.
+            blocked = k > q if include_aligned else k >= q
         allowed &= ~(cross_copy & blocked)
     assert bool(allowed.any(dim=1).all()), "a query position was fully masked"
     return torch.where(allowed, 0.0, torch.finfo(dtype).min).to(dtype)[None, None]
@@ -225,13 +251,14 @@ def attention_bias(
 ) -> torch.Tensor:
     """Build the additive 4D attention bias for one local decoding pass."""
     # These arms need token-by-token cutoffs, not one rectangular block.
-    if mask in {"strictly_past", "past_or_aligned"}:
+    if mask in CROSS_COPY_MASKS:
         return causal_cross_bias(
             query_positions,
             kv_length,
             prompt.aligned1,
             prompt.aligned2,
-            include_aligned=mask == "past_or_aligned",
+            include_aligned=mask in {"past_or_aligned", "future_or_aligned"},
+            look_forward=mask in {"strictly_future", "future_or_aligned"},
             dtype=dtype,
         )
     # No mask, copy2, and answer arms all use one rectangular block.
@@ -329,18 +356,22 @@ def verify_mask(
         )
         assert outputs.attentions is not None
         patterns = torch.stack([layer[0] for layer in outputs.attentions]).float()
-        if mask in {"strictly_past", "past_or_aligned"}:
+        if mask in CROSS_COPY_MASKS:
             block = patterns[:, :, prompt.aligned2][:, :, :, prompt.aligned1]
-            diagonal = 1 if mask == "past_or_aligned" else 0
-            blocked = torch.triu(
-                torch.ones(
-                    len(prompt.aligned1),
-                    len(prompt.aligned1),
-                    device=patterns.device,
-                    dtype=torch.bool,
-                ),
-                diagonal=diagonal,
+            ones = torch.ones(
+                len(prompt.aligned1),
+                len(prompt.aligned1),
+                device=patterns.device,
+                dtype=torch.bool,
             )
+            if mask in {"strictly_past", "past_or_aligned"}:
+                blocked = torch.triu(
+                    ones, diagonal=1 if mask == "past_or_aligned" else 0
+                )
+            else:
+                blocked = torch.tril(
+                    ones, diagonal=-1 if mask == "future_or_aligned" else 0
+                )
             masses[label] = round(float(block[:, :, blocked].max()), 6)
             count = int(blocked.sum())
         else:
@@ -353,6 +384,6 @@ def verify_mask(
 
 def masked_query_count(prompt: Prompt, mask: Mask) -> int:
     """Return the number of query positions affected by the mask."""
-    if mask in {"strictly_past", "past_or_aligned"}:
+    if mask in CROSS_COPY_MASKS:
         return len(prompt.aligned2)
     return len(prompt.blocked_queries(mask, prompt.ids.shape[1]))
