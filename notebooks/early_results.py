@@ -116,7 +116,7 @@ def _(mo):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    # Gemma 3 Benefits from prompy copying
+    # Gemma 3 benefits from prompt copying
     """)
     return
 
@@ -511,14 +511,20 @@ def _(Path, pd, pretty_model):
     if not _frames:
         raise FileNotFoundError(f"no full-run samples.jsonl under {ABLATION_DIR}")
     ablation = pd.concat(_frames, ignore_index=True)
-    wide = (
-        ablation.pivot(
-            index=["model", "gsm8k_test_index"], columns="arm", values="correct"
-        )
-        .dropna()
-        .astype(bool)
-    )
     short = {m: pretty_model(m) for m in ablation.model.unique()}
+
+    # One item x arm panel per model. The future-direction masks were only run on
+    # 12b/27b, so a single pooled frame with .dropna() would silently discard
+    # every 4b row. Drop arms the model never ran, then require full item
+    # coverage across the arms that remain.
+    panels: dict[str, pd.DataFrame] = {
+        short[model]: (
+            group.droplevel("model").dropna(axis=1, how="all").dropna().astype(bool)
+        )
+        for model, group in ablation.pivot(
+            index=["model", "gsm8k_test_index"], columns="arm", values="correct"
+        ).groupby(level="model")
+    }
     return (
         BASELINE,
         CAUSAL_ARMS,
@@ -526,8 +532,7 @@ def _(Path, pd, pretty_model):
         PATHWAY_ARMS,
         SINGLE,
         by_size,
-        short,
-        wide,
+        panels,
     )
 
 
@@ -541,17 +546,16 @@ def _(
     alt,
     by_size,
     mo,
+    panels: "dict[str, pd.DataFrame]",
     pd,
     proportion_confint,
-    short,
-    wide,
 ):
     # Data and results
     pathway_arms = [SINGLE, BASELINE, *PATHWAY_ARMS]
 
     def arm_accuracy(arms: list[str]) -> pd.DataFrame:
         rows = []
-        for model, sub in wide.groupby(level="model"):
+        for model, sub in panels.items():
             for arm in arms:
                 if arm not in sub.columns:
                     continue
@@ -559,7 +563,7 @@ def _(
                 lo, hi = proportion_confint(hits, n, method="wilson")
                 rows.append(
                     {
-                        "model": short[model],
+                        "model": model,
                         "arm": DISPLAY.get(arm, arm),
                         "arm_key": arm,
                         "n": n,
@@ -754,9 +758,8 @@ def _(
     math,
     mcnemar,
     multipletests,
+    panels: "dict[str, pd.DataFrame]",
     pd,
-    short,
-    wide,
 ):
     ALPHA = 0.05
 
@@ -782,23 +785,25 @@ def _(
             "p": float(res.pvalue),
         }
 
-    _masked = [a for a in wide.columns if a not in (BASELINE, SINGLE)]
-    _plan = [("repeat_effect", SINGLE, BASELINE)]
-    _plan += [("vs_2copies", BASELINE, arm) for arm in _masked]
-    _plan += [("vs_1copy", SINGLE, arm) for arm in _masked]
+    def _plan(arms: list[str]) -> list[tuple[str, str, str]]:
+        masked = [a for a in arms if a not in (BASELINE, SINGLE)]
+        return [
+            ("repeat_effect", SINGLE, BASELINE),
+            *[("vs_2copies", BASELINE, arm) for arm in masked],
+            *[("vs_1copy", SINGLE, arm) for arm in masked],
+        ]
 
-    _rows = []
-    for model, sub in wide.groupby(level="model"):
-        for family, reference, arm in _plan:
-            _rows.append(
-                {
-                    "model": short[model],
-                    "family": family,
-                    "reference": DISPLAY.get(reference, reference),
-                    "arm": DISPLAY.get(arm, arm),
-                    **paired_test(sub[reference], sub[arm]),
-                }
-            )
+    _rows = [
+        {
+            "model": _model,
+            "family": _family,
+            "reference": DISPLAY.get(_ref, _ref),
+            "arm": DISPLAY.get(_arm, _arm),
+            **paired_test(_sub[_ref], _sub[_arm]),
+        }
+        for _model, _sub in panels.items()
+        for _family, _ref, _arm in _plan(list(_sub.columns))
+    ]
     ablation_tests = pd.DataFrame(_rows)
     ablation_tests["p_holm"] = ablation_tests.groupby("model").p.transform(
         lambda p: multipletests(p, method="holm")[1]
@@ -807,11 +812,11 @@ def _(
     ablation_tests = ablation_tests.sort_values(
         "model", key=lambda c: c.map(by_size), kind="stable"
     ).reset_index(drop=True)
-    return ALPHA, ablation_tests
+    return ablation_tests, paired_test
 
 
 @app.cell
-def _(ablation_tests, by_size, mo, pd):
+def _(ablation_tests, mo):
     def _fmt_p(v: float) -> str:
         return f"{v:.2e}" if v < 1e-3 else f"{v:.3f}"
 
@@ -835,81 +840,20 @@ def _(ablation_tests, by_size, mo, pd):
         ]
     ]
 
-    _base_label, _single_label = "2 copies", "1 copy"
-    _vs_base = ablation_tests[ablation_tests.family == "vs_2copies"].set_index(
-        ["model", "arm"]
-    )
-    _vs_one = ablation_tests[ablation_tests.family == "vs_1copy"].set_index(
-        ["model", "arm"]
-    )
-    _has_gain = (
-        ablation_tests[ablation_tests.family == "repeat_effect"]
-        .set_index("model")
-        .apply(lambda r: bool(r.sig and r.delta > 0), axis=1)
-        .to_dict()
-    )
-    _verdicts = []
-    for key, base_row in _vs_base.iterrows():
-        one_row = _vs_one.loc[key]
-        hurts = bool(base_row.sig and base_row.delta < 0)
-        above_single = bool(one_row.sig and one_row.delta > 0)
-        if not _has_gain[key[0]]:
-            verdict = "n/a — no established repeat gain"
-        elif not hurts:
-            verdict = f"no detectable role (≈ {_base_label})"
-        elif above_single:
-            verdict = "carries part of the gain"
-        else:
-            verdict = f"carries the whole gain (≈ {_single_label})"
-        _verdicts.append(
-            {
-                "model": key[0],
-                "blocked pathway": key[1],
-                f"vs {_base_label} (pp)": base_row.delta * 100,
-                f"vs {_single_label} (pp)": one_row.delta * 100,
-                "verdict": verdict,
-            }
-        )
-    verdicts = (
-        pd.DataFrame(_verdicts)
-        .sort_values(
-            ["model", f"vs {_base_label} (pp)"],
-            key=lambda c: c.map(by_size) if c.name == "model" else c,
-            kind="stable",
-        )
-        .reset_index(drop=True)
-    )
-
-    mo.vstack(
-        [
-            mo.ui.table(
-                _view,
-                selection=None,
-                pagination=False,
-                show_column_summaries=False,
-                show_data_types=False,
-                format_mapping={
-                    "delta": _fmt_pp,
-                    "delta_low": _fmt_pp,
-                    "delta_high": _fmt_pp,
-                    "p": _fmt_p,
-                    "p_holm": _fmt_p,
-                },
-                label="McNemar ablation contrasts (Holm within model)",
-            ),
-            mo.md("### Verdict per blocked pathway"),
-            mo.ui.table(
-                verdicts,
-                selection=None,
-                pagination=False,
-                show_column_summaries=False,
-                show_data_types=False,
-                format_mapping={
-                    f"vs {_base_label} (pp)": "{:+.2f}".format,
-                    f"vs {_single_label} (pp)": "{:+.2f}".format,
-                },
-            ),
-        ]
+    mo.ui.table(
+        _view,
+        selection=None,
+        pagination=False,
+        show_column_summaries=False,
+        show_data_types=False,
+        format_mapping={
+            "delta": _fmt_pp,
+            "delta_low": _fmt_pp,
+            "delta_high": _fmt_pp,
+            "p": _fmt_p,
+            "p_holm": _fmt_p,
+        },
+        label="McNemar ablation contrasts (Holm within model)",
     )
     return
 
@@ -917,9 +861,227 @@ def _(ablation_tests, by_size, mo, pd):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    **Look-forward prediction:** blocking past copy1 tokens (the reverse triangle)
-    should do very little if the two-copy gain is from copy 2 looking into the
-    future of copy 1.
+    ## Sorting arms: recovery fraction
+
+    A pair of McNemar tests can't sort arms on its own. "Not significantly worse
+    than 2 copies" is a failure to reject, not evidence of equivalence, and with
+    a repeat effect of only 3–5pp the tests have little power to tell "full
+    recovery" from "half recovery". So classify on an effect size instead:
+
+    $$\rho = \frac{\text{acc}(\text{arm}) - \text{acc}(\text{1 copy})}{\text{acc}(\text{2 copies}) - \text{acc}(\text{1 copy})}$$
+
+    $\rho \approx 1$ means the arm keeps the whole two-copy gain, $\rho \approx 0$
+    means it keeps none. CIs come from an item-level paired bootstrap, so
+    numerator and denominator resample together and the CI accounts for the noise
+    in the repeat effect itself. An arm is called only when its CI sits entirely
+    on one side of $\rho = 0.5$; otherwise it stays **undetermined**.
+    """)
+    return
+
+
+@app.cell
+def _(
+    BASELINE,
+    DISPLAY,
+    SINGLE,
+    ablation_tests,
+    by_size,
+    mo,
+    np,
+    panels: "dict[str, pd.DataFrame]",
+    pd,
+):
+    RHO_BOOT, MIDPOINT = 4000, 0.5
+
+    _has_gain = (
+        ablation_tests[ablation_tests.family == "repeat_effect"]
+        .set_index("model")
+        .apply(lambda r: bool(r.sig and r.delta > 0), axis=1)
+        .to_dict()
+    )
+
+    def _recovery_rows(model: str, sub: pd.DataFrame) -> list[dict]:
+        draws = np.random.default_rng(0).integers(
+            0, len(sub), size=(RHO_BOOT, len(sub))
+        )
+        one, two = sub[SINGLE].to_numpy(), sub[BASELINE].to_numpy()
+        gap = two[draws].mean(1) - one[draws].mean(1)
+        rows = []
+        for arm in [a for a in sub.columns if a not in (BASELINE, SINGLE)]:
+            hits = sub[arm].to_numpy()
+            # A model with no repeat effect has resamples where gap == 0; those
+            # draws are dropped and the surviving CI comes out uselessly wide,
+            # which is the correct signal that rho is undefined there.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                boot = (hits[draws].mean(1) - one[draws].mean(1)) / gap
+            lo, hi = np.percentile(boot[np.isfinite(boot)], [2.5, 97.5])
+            if not _has_gain[model]:
+                verdict = "n/a — no established repeat gain"
+            elif lo > MIDPOINT:
+                verdict = "recovers"
+            elif hi < MIDPOINT:
+                verdict = "does not recover"
+            else:
+                verdict = "undetermined"
+            rows.append(
+                {
+                    "model": model,
+                    "arm": DISPLAY.get(arm, arm),
+                    "rho": (hits.mean() - one.mean()) / (two.mean() - one.mean()),
+                    "rho_low": lo,
+                    "rho_high": hi,
+                    "verdict": verdict,
+                }
+            )
+        return rows
+
+    _rows = [r for m, s in panels.items() for r in _recovery_rows(m, s)]
+    recovery = (
+        pd.DataFrame(_rows)
+        .sort_values(
+            ["model", "rho"],
+            key=lambda c: c.map(by_size) if c.name == "model" else c,
+            kind="stable",
+        )
+        .reset_index(drop=True)
+    )
+
+    mo.ui.table(
+        recovery,
+        selection=None,
+        pagination=False,
+        show_column_summaries=False,
+        show_data_types=False,
+        format_mapping={
+            "rho": "{:+.2f}".format,
+            "rho_low": "{:+.2f}".format,
+            "rho_high": "{:+.2f}".format,
+        },
+        label="Fraction of the two-copy gain surviving each mask",
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Direct arm-vs-arm contrasts
+
+    The baseline comparisons above answer "does this arm keep the gain". They
+    don't isolate *which part of the mask* did the work, because each arm differs
+    from a baseline in several ways at once. These contrasts compare arms to each
+    other, so each one moves a single component of the mask:
+
+    - **aligned token | future access** — `strictly_future` vs `future_or_aligned`:
+      adds back only the diagonal, holding future access fixed.
+    - **aligned token | past access** — `strictly_past` vs `past_or_aligned`: the
+      same diagonal, holding past access fixed.
+    - **future vs past** — swaps the direction of allowed attention at matched
+      inclusivity.
+
+    The direction pairs are also matched on *how much* attention is removed. For
+    an aligned span of length $L$, `strictly_past` and `strictly_future` each
+    block $L(L+1)/2$ copy2→copy1 edges, and `past_or_aligned` /
+    `future_or_aligned` each block $L(L-1)/2$. Any difference within a pair is
+    about *which* edges were cut, not how many — which rules out "the mask just
+    damages the model" as an explanation.
+    """)
+    return
+
+
+@app.cell
+def _(mo, multipletests, paired_test, panels: "dict[str, pd.DataFrame]", pd):
+    CONTRASTS = [
+        (
+            "copy2_strictly_future_copy1",
+            "copy2_future_or_aligned_copy1",
+            "aligned token | future access",
+        ),
+        (
+            "copy2_strictly_past_copy1",
+            "copy2_past_or_aligned_copy1",
+            "aligned token | past access",
+        ),
+        (
+            "copy2_past_or_aligned_copy1",
+            "copy2_future_or_aligned_copy1",
+            "future vs past (inclusive)",
+        ),
+        (
+            "copy2_strictly_past_copy1",
+            "copy2_strictly_future_copy1",
+            "future vs past (strict)",
+        ),
+    ]
+
+    def _contrast_rows(model: str, sub: pd.DataFrame) -> list[dict]:
+        block = [
+            {"model": model, "contrast": label, **paired_test(sub[ref], sub[arm])}
+            for ref, arm, label in CONTRASTS
+            if ref in sub.columns and arm in sub.columns
+        ]
+        holm = multipletests([r["p"] for r in block], method="holm")[1]
+        return [r | {"p_holm": p} for r, p in zip(block, holm)]
+
+    contrasts = pd.DataFrame(
+        [r for m, s in panels.items() for r in _contrast_rows(m, s)]
+    )
+    contrasts["sig"] = contrasts.p_holm < 0.05
+
+    mo.ui.table(
+        contrasts.assign(sig=contrasts.sig.map({True: "*", False: ""}))[
+            ["model", "contrast", "delta", "delta_low", "delta_high", "p_holm", "sig"]
+        ],
+        selection=None,
+        pagination=False,
+        show_column_summaries=False,
+        show_data_types=False,
+        format_mapping={
+            "delta": lambda v: f"{v * 100:+.2f}",
+            "delta_low": lambda v: f"{v * 100:+.2f}",
+            "delta_high": lambda v: f"{v * 100:+.2f}",
+            "p_holm": lambda v: f"{v:.2e}" if v < 1e-3 else f"{v:.3f}",
+        },
+        label="Arm-vs-arm McNemar contrasts (Holm within model)",
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## What the arms say
+
+    Exactly one arm keeps the two-copy gain: **future + aligned**
+    ($\rho = 1.27$ on 12b, $1.03$ on 27b; indistinguishable from 2 copies and
+    significantly above 1 copy). Every other cross-copy mask lands at or below
+    the 1-copy baseline.
+
+    Both components are needed, and the arm-vs-arm contrasts show they interact.
+    Adding the aligned diagonal back is worth +4.3pp (12b) / +6.2pp (27b) when
+    copy 2 can also see copy 1's future, but nothing at all (+0.8 / +1.0pp, n.s.)
+    when it can only see the past. Read as an induction-style mechanism, the
+    aligned token is what lets copy 2 locate itself in copy 1, and the future
+    tokens are what it reads once located — remove either and there is nothing
+    left to gain.
+
+    ### Caveats we should carry into the writeup
+
+    - **4b carries no weight.** Its repeat effect is +1.1pp (Holm p = 0.44), so
+      the denominator of $\rho$ is noise and every 4b arm is undetermined. The
+      causal claim rests on two models, 12b and 27b.
+    - **Blocking answer→copy1 is undetermined**, not "no effect": $\rho$ = 0.41
+      [-0.36, 0.98] on 12b and 0.56 [0.17, 0.88] on 27b. It also masks only ~5
+      query positions against ~61 for the cross-copy arms, so it is a much
+      weaker intervention and not a clean comparison.
+    - **`strictly_future` is a partial null.** It does not recover on 27b and is
+      undetermined on 12b ($\rho$ = 0.00 [-0.91, 0.53]). The claim that the
+      aligned token is *necessary* is supported by the direct contrast, not by
+      this arm's CI.
+    - **Past-direction arms fall below 1 copy** (up to -2.3pp), i.e. masking is
+      not free. The reason this doesn't sink the causal reading is that
+      `future_or_aligned` removes the same number of edges and costs nothing, so
+      the damage is direction-specific rather than a generic masking penalty.
     """)
     return
 
