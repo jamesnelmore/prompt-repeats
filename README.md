@@ -2,7 +2,7 @@
 
 Static demo: https://jamesnelmore.github.io/prompt-repeats/
 
-To run locally: `uv sync --frozen` then `uv run marimo view notebooks/demo.py`.
+To run locally: `uv sync --frozen` then `uv run marimo edit notebooks/demo.py`.
 
 ## Headline Results (tenative)
 - LLM nonreasoning performance on GSM8k improves when a model is shown 2 copies of the prompt. [Past work](https://blog.redwoodresearch.org/p/recent-llms-can-use-filler-tokens) found a similar result for frontier models, this repo shows it replicates to open weight models as well, specifically the gemma 3/4 family above 4 billion parameters
@@ -39,4 +39,3 @@ Assistant:
 ```
 
 improves performance in certain frontier LLMs.
-
